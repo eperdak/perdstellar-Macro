@@ -1,29 +1,23 @@
 <div align="center" style="text-align: center;">
-<h1><img src="icon.ico" height="30px">  maxstellar's Biome Macro</h1>
-<p> A small macro that detects biomes in the Roblox game Sol's RNG.<br>This macro started as a small project to detect biomes even when I was using my PC for other things.</p>
+<h1><img src="icon.ico" height="30px">  perdstellar's Macro</h1>
+<p> A small macro that detects biomes in the Roblox game Sol's RNG.<br>This project is a fork of [maxstellar Biome Macro](https://github.com/purestellenium/maxstellar-Biome-Macro) project.</p>
 
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/purestellenium/maxstellar-Biome-Macro/total)
-![GitHub Release](https://img.shields.io/github/v/release/purestellenium/maxstellar-Biome-Macro)
 ![GitHub License](https://img.shields.io/github/license/purestellenium/maxstellar-Biome-Macro)
 </div>
 
 ## Features
-- Biome detection without OCR
-- Aura detection without OCR
-- Notifications on Aura roll
+- Improved biome detection without OCR
+- Anti-AFK System
+- Auto-reconnection to private server using dedicated URL
 
 ## Installation
-Download the [latest release](https://github.com/maxstellar/maxstellar-Biome-Macro/releases/latest) and put it in an empty folder. Run the .exe file and configure to your liking.<br><br>
-Alternatively, if you already have Python installed, download the Python file along with the required libraries and images, and run it from command line or with your preferred method.
+WIP
 
 ## Common Issues
-### Macro doesn't detect biomes
-- Close ALL instances of Roblox and the macro, and then opening Roblox, and then opening the macro.
-- Make sure your PC time is not offset (early or late)
+### Wip
+- Wip
 
-### Macro won't launch (shows error message)
-- Make sure the zip file downloaded was extracted fully (into a folder)
-- Make sure you are running the macro from the extracted folder (and not from the Home page of File Explorer)
-- Delete and reinstall macro
+### Wip
+- Wip
 
 Enjoy!
