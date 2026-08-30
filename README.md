@@ -1,5 +1,5 @@
 <div align="center" style="text-align: center;">
-<h1><img src="" height="30px">  perdstellar's Macro</h1>
+<h1><img src="icon.ico" height="30px">  perdstellar's Macro</h1>
 <p> A small macro that detects biomes in the Roblox game Sol's RNG.</p>
 
 This project is a fork of [maxstellar Biome Macro](https://github.com/purestellenium/maxstellar-Biome-Macro) project.
