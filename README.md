@@ -13,7 +13,7 @@ This project is a fork of [maxstellar Biome Macro](https://github.com/purestelle
 - Auto-updates
 
 ## Installation
-- Go to [releases](https://github.com/eperdak/perdstellar-Macro/releases/latest), choose the latest version and download the perdstellar-Macro.zip! You can also just click [here](https://github.com/eperdak/perdstellar-Macro/releases/download/v1.0/perdstellar-Macro.zip) to download the latest release automatically.
+- Go to [latest release](https://github.com/eperdak/perdstellar-Macro/releases/latest) and download the perdstellar-Macro-v1.0-hotfix.zip! You can also just click [here](https://github.com/eperdak/perdstellar-Macro/releases/download/v1.0-hotfix/perdstellar-Macro-v1.0-hotfix.zip) to download the latest release automatically.
 - Extract the ZIP archive to a folder of your choice.
 - Run `START_MACRO.bat` to launch the macro.
 
