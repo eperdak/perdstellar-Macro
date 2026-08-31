@@ -545,7 +545,7 @@ class BiomeMacroApp:
         print(f"[Config] Saved Anti-AFK settings: enabled={self.anti_afk_enabled.get()}, interval={self.anti_afk_interval.get()}")
 
     def start_macro(self):
-        if self.started:
+        if self.started and not self.paused:
             return
 
         if self.paused:
@@ -593,13 +593,10 @@ class BiomeMacroApp:
         if not self.started:
             return
 
-        self.paused = not self.paused
-        if self.paused:
+        if not self.paused:
+            self.paused = True
             self.root.title("perdstellar's Macro - Paused")
             print("[Macro] Paused")
-        else:
-            self.root.title("perdstellar's Macro - Running")
-            print("[Macro] Resumed")
 
     def stop_macro(self):
         if not self.started:
