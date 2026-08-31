@@ -13,7 +13,7 @@ This project is a fork of [maxstellar Biome Macro](https://github.com/purestelle
 - Auto-reconnection to private server using dedicated URL
 
 ## Installation
-WIP
+- Go to [releases](https://github.com/eperdak/perdstellar-Macro/releases/latest), choose the latest version and download the perdstellarMacro.exe! You can also just click [here](https://github.com/eperdak/perdstellar-Macro/releases/download/v1.0-beta.1/perdstellarMacro.exe) to download the latest release automatically.
 
 ## Common Issues
 ### Wip
