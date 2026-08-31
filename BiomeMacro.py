@@ -37,16 +37,40 @@ sys.excepthook = exception_handler
 class BiomeTracker:
 
     def __init__(self):
-        self.logs_dir = os.path.join(os.getenv('LOCALAPPDATA', ''), 'Roblox', 'logs')
-        self.current_biome = "NORMAL"
-        self.last_position = 0
-        self.detection_running = False
-        self.detection_thread = None
-        self.biome_callback = None
-        self.log_file_path = None
-        self.lock = threading.Lock()
+            try:
+                myappid = 'perdstellar.biomemacro.app.1.0'
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+            except Exception:
+                pass
 
-        self.biome_data = self._load_biome_data()
+            customtkinter.set_default_color_theme("dark-blue")
+            self.root = customtkinter.CTk()
+            self.root.title("perdstellar's Macro")
+            self.root.geometry('505x285')
+            self.root.resizable(False, False)
+
+            if getattr(sys, 'frozen', False):
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.dirname(__file__)
+
+            icon_path = os.path.join(base_path, 'icon.ico')
+            if os.path.exists(icon_path):
+                try:
+                    self.root.iconbitmap(default=icon_path)
+                except Exception as e:
+                    print(f"[UI] Icon set error: {e}")
+
+            self.logs_dir = os.path.join(os.getenv('LOCALAPPDATA', ''), 'Roblox', 'logs')
+            self.current_biome = "NORMAL"
+            self.last_position = 0
+            self.detection_running = False
+            self.detection_thread = None
+            self.biome_callback = None
+            self.log_file_path = None
+            self.lock = threading.Lock()
+
+            self.biome_data = self._load_biome_data()
 
     def _load_biome_data(self):
         url = "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/assets/biomes_data.json"
@@ -200,7 +224,15 @@ class BiomeMacroApp:
         self.root.geometry('505x285')
         self.root.resizable(False, False)
 
-        icon_path = os.path.join(os.path.dirname(__file__), 'icon.ico')
+        # set icon for window
+        if getattr(sys, 'frozen', False):
+            # running as compiled exe
+            base_path = sys._MEIPASS
+        else:
+            # running as script
+            base_path = os.path.dirname(__file__)
+
+        icon_path = os.path.join(base_path, 'icon.ico')
         if os.path.exists(icon_path):
             try:
                 self.root.iconbitmap(icon_path)
