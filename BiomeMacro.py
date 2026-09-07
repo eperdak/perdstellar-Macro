@@ -68,6 +68,7 @@ class BiomeTracker:
             self.detection_thread = None
             self.biome_callback = None
             self.log_file_path = None
+            self.current_log_timestamp = None
             self.lock = threading.Lock()
 
             self.biome_data = self._load_biome_data()
@@ -88,7 +89,9 @@ class BiomeTracker:
             "GLITCHED": {"color": "0xbfff00", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/GLITCHED.png"},
             "DREAMSPACE": {"color": "0xea9dda", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/DREAMSPACE.png"},
             "CYBERSPACE": {"color": "0x0A1A3D", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/CYBERSPACE.png"},
-            "EGGLAND": {"color": "0xd4fc8d", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/EGGLAND.png"}
+            "EGGLAND": {"color": "0xd4fc8d", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/EGGLAND.png"},
+            "BLAZING SUN": {"color": "0xFFDEAD", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/BLAZING%20SUN.png"},
+            "INCINERATOR ": {"color": "0xCD853F", "thumbnail_url": ""}
         }
 
         try:
@@ -106,18 +109,69 @@ class BiomeTracker:
     def set_biome_callback(self, callback):
         self.biome_callback = callback
 
+    def _parse_log_timestamp(self, filename):
+        """
+        Parse log filename to extract timestamp
+        Format: 0.736.0.7361348_20260907T203326Z_Player_77795_last.log
+        Returns: timestamp string (20260907T203326Z) or None
+        """
+        try:
+            parts = filename.split('_')
+            if len(parts) >= 2:
+                timestamp = parts[1]
+                return timestamp
+        except Exception:
+            pass
+        return None
+
     def _get_latest_log_file(self):
         if not os.path.exists(self.logs_dir):
             return None
 
         try:
-            files = [os.path.join(self.logs_dir, f) for f in os.listdir(self.logs_dir)
+            files = [f for f in os.listdir(self.logs_dir)
                      if f.endswith('.log') and 'Installer' not in f]
 
             if not files:
                 return None
 
-            return max(files, key=os.path.getmtime)
+            # parse and sort by timestamp in filename
+            log_files_with_timestamps = []
+            for filename in files:
+                timestamp = self._parse_log_timestamp(filename)
+                if timestamp:
+                    full_path = os.path.join(self.logs_dir, filename)
+                    log_files_with_timestamps.append((timestamp, full_path, filename))
+
+            if not log_files_with_timestamps:
+                # fallback to modification time if no timestamps found
+                files_full = [os.path.join(self.logs_dir, f) for f in files]
+                return max(files_full, key=os.path.getmtime)
+
+            # sort by timestamp (newest first)
+            log_files_with_timestamps.sort(key=lambda x: x[0], reverse=True)
+            latest_timestamp, latest_file, latest_filename = log_files_with_timestamps[0]
+
+            # if we haven't tracked a log yet, use the latest one
+            if self.current_log_timestamp is None:
+                self.current_log_timestamp = latest_timestamp
+                print(f"[BiomeTracker] Tracking new log: {latest_filename}")
+                return latest_file
+
+            # if latest log is newer than current, switch to it
+            if latest_timestamp > self.current_log_timestamp:
+                print(f"[BiomeTracker] Switching to newer log: {latest_filename}")
+                self.current_log_timestamp = latest_timestamp
+                return latest_file
+
+            # otherwise, keep using current log
+            if self.log_file_path and os.path.exists(self.log_file_path):
+                return self.log_file_path
+
+            # if current log doesn't exist anymore, use latest
+            self.current_log_timestamp = latest_timestamp
+            return latest_file
+
         except Exception as e:
             print(f"[BiomeTracker] Error finding log file: {e}")
             return None
@@ -221,7 +275,7 @@ class BiomeMacroApp:
         customtkinter.set_default_color_theme("dark-blue")
         self.root = customtkinter.CTk()
         self.root.title("perdstellar's Macro")
-        self.root.geometry('505x285')
+        self.root.geometry('498x290')
         self.root.resizable(False, False)
 
         # set icon for window
@@ -259,6 +313,11 @@ class BiomeMacroApp:
         self.anti_afk_thread = None
         self.anti_afk_running = False
 
+        self.roblox_monitor_enabled = customtkinter.BooleanVar(self.root, value=self.config.getboolean('Macro', 'roblox_monitor', fallback=True))
+        self.roblox_monitor_thread = None
+        self.roblox_monitor_running = False
+        self.roblox_window_handle = None
+
         self._build_ui()
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -284,7 +343,8 @@ class BiomeMacroApp:
             }
             config['Macro'] = {
                 'anti_afk': "True",
-                'anti_afk_interval': "5"
+                'anti_afk_interval': "5",
+                'roblox_monitor': "True"
             }
 
             with open(self.config_name, 'w') as f:
@@ -315,63 +375,90 @@ class BiomeMacroApp:
             self.biome_vars[biome_key] = customtkinter.StringVar(self.root, value)
 
     def _build_ui(self):
-        tabview = customtkinter.CTkTabview(self.root, width=505, height=230)
-        tabview.grid(row=0, column=0, sticky='nsew', columnspan=75)
-        tabview.add("Webhook")
-        tabview.add("Macro")
-        tabview.add("Credits")
-        tabview._segmented_button.configure(font=customtkinter.CTkFont(family="Segoe UI", size=16))
-        tabview._segmented_button.grid(sticky="w", padx=15)
+        # Configure grid layout
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_rowconfigure(1, weight=0)
+        self.root.grid_columnconfigure(0, weight=1)
 
-        self._build_webhook_tab(tabview.tab("Webhook"))
+        self.tabview = customtkinter.CTkTabview(self.root, width=505, height=230, command=self._on_tab_change)
+        self.tabview.grid(row=0, column=0, sticky='nsew', columnspan=75, padx=10, pady=(0, 0))
+        self.tabview.add("Webhook")
+        self.tabview.add("Macro")
+        self.tabview.add("Credits")
+        self.tabview._segmented_button.configure(font=customtkinter.CTkFont(family="Segoe UI", size=16))
+        self.tabview._segmented_button.grid(sticky="w", padx=15)
 
-        self._build_macro_tab(tabview.tab("Macro"))
+        self._build_webhook_tab(self.tabview.tab("Webhook"))
 
-        self._build_credits_tab(tabview.tab("Credits"))
+        self._build_macro_tab(self.tabview.tab("Macro"))
+
+        self._build_credits_tab(self.tabview.tab("Credits"))
 
         self._build_control_buttons()
 
-        tabview.set("Webhook")
+        self.tabview.set("Webhook")
+        self._adjust_window_size("Webhook")
+
+    def _on_tab_change(self):
+        current_tab = self.tabview.get()
+        self._adjust_window_size(current_tab)
+
+    def _adjust_window_size(self, tab_name):
+        if tab_name == "Webhook":
+            self.root.geometry('498x270')
+        elif tab_name == "Macro":
+            self.root.geometry('498x305')
+        elif tab_name == "Credits":
+            self.root.geometry('498x305')
 
     def _build_webhook_tab(self, parent):
-        # Webhook URL
-        webhook_label = customtkinter.CTkLabel(parent, text="Webhook URL:",
-                                               font=customtkinter.CTkFont(family="Segoe UI", size=20))
-        webhook_label.grid(column=0, row=0, columnspan=2, padx=(10, 0), pady=(5, 0), sticky="w")
+        # Configure parent to center content vertically
+        parent.grid_rowconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=0)
+        parent.grid_rowconfigure(2, weight=1)
 
-        self.webhook_field = customtkinter.CTkEntry(parent,
+        # Create centered frame
+        center_frame = customtkinter.CTkFrame(parent, fg_color="transparent")
+        center_frame.grid(row=1, column=0, sticky="ew")
+
+        # Webhook URL
+        webhook_label = customtkinter.CTkLabel(center_frame, text="Webhook URL:",
+                                               font=customtkinter.CTkFont(family="Segoe UI", size=20))
+        webhook_label.grid(column=0, row=0, columnspan=2, padx=(10, 0), pady=(0, 0), sticky="w")
+
+        self.webhook_field = customtkinter.CTkEntry(center_frame,
                                                     font=customtkinter.CTkFont(family="Segoe UI", size=20),
-                                                    width=335)
+                                                    width=319)
         webhook_value = self.config.get('Webhook', 'webhook_url', fallback="")
         if webhook_value:
             self.webhook_field.insert(0, webhook_value)
-        self.webhook_field.grid(row=0, column=1, padx=(144, 0), pady=(10, 0), sticky="w")
+        self.webhook_field.grid(row=0, column=1, padx=(144, 0), pady=(5, 0), sticky="w")
 
         # Private Server
-        ps_label = customtkinter.CTkLabel(parent, text="Private Server URL:",
+        ps_label = customtkinter.CTkLabel(center_frame, text="Private Server URL:",
                                          font=customtkinter.CTkFont(family="Segoe UI", size=20))
-        ps_label.grid(column=0, row=1, padx=(10, 0), pady=(20, 0), columnspan=2, sticky="w")
+        ps_label.grid(column=0, row=1, padx=(10, 0), pady=(15, 0), columnspan=2, sticky="w")
 
-        self.ps_field = customtkinter.CTkEntry(parent,
+        self.ps_field = customtkinter.CTkEntry(center_frame,
                                               font=customtkinter.CTkFont(family="Segoe UI", size=20),
-                                              width=300)
+                                              width=285)
         ps_value = self.config.get('Webhook', 'private_server', fallback="")
         if ps_value:
             self.ps_field.insert(0, ps_value)
-        self.ps_field.grid(row=1, column=1, padx=(179, 0), pady=(23, 0), sticky="w")
+        self.ps_field.grid(row=1, column=1, padx=(179, 0), pady=(18, 0), sticky="w")
 
         # Discord User ID
-        discid_label = customtkinter.CTkLabel(parent, text="Discord User ID:",
+        discid_label = customtkinter.CTkLabel(center_frame, text="Discord User ID:",
                                              font=customtkinter.CTkFont(family="Segoe UI", size=20))
-        discid_label.grid(column=0, row=2, padx=(10, 0), pady=(20, 0), columnspan=2, sticky="w")
+        discid_label.grid(column=0, row=2, padx=(10, 0), pady=(15, 0), columnspan=2, sticky="w")
 
-        self.discid_field = customtkinter.CTkEntry(parent,
+        self.discid_field = customtkinter.CTkEntry(center_frame,
                                                    font=customtkinter.CTkFont(family="Segoe UI", size=20),
-                                                   width=324)
+                                                   width=309)
         discid_value = self.config.get('Webhook', 'discord_user_id', fallback="")
         if discid_value:
             self.discid_field.insert(0, discid_value)
-        self.discid_field.grid(row=2, column=1, padx=(155, 0), pady=(23, 0), sticky="w")
+        self.discid_field.grid(row=2, column=1, padx=(155, 0), pady=(18, 0), sticky="w")
 
     def _build_macro_tab(self, parent):
         biome_button = customtkinter.CTkButton(parent, text="Configure Pings",
@@ -397,10 +484,16 @@ class BiomeMacroApp:
         self.anti_afk_interval_entry.grid(row=2, column=0, padx=(160, 0), pady=(10, 0), sticky="w")
         self.anti_afk_interval_entry.bind("<FocusOut>", lambda e: self._save_anti_afk_settings())
 
+        roblox_monitor_toggle = customtkinter.CTkCheckBox(parent, text="Stop the macro on Roblox crash",
+                                                          font=customtkinter.CTkFont(family="Segoe UI", size=18),
+                                                          variable=self.roblox_monitor_enabled,
+                                                          command=self._save_roblox_monitor_settings)
+        roblox_monitor_toggle.grid(row=3, column=0, padx=(10, 0), pady=(15, 0), sticky="w")
+
         info_label = customtkinter.CTkLabel(parent,
                                            text="Anti-AFK will jump in-game to prevent disconnect",
                                            font=customtkinter.CTkFont(family="Segoe UI", size=12))
-        info_label.grid(row=3, column=0, padx=(10, 0), pady=(20, 0), sticky="w")
+        info_label.grid(row=4, column=0, padx=(10, 0), pady=(10, 0), sticky="w")
 
     def _build_credits_tab(self, parent):
         dirname = os.path.dirname(__file__)
@@ -458,7 +551,7 @@ class BiomeMacroApp:
                 sols_sniper = customtkinter.CTkImage(dark_image=Image.open(sols_sniper_path), size=(60, 60))
                 sols_sniper_label = customtkinter.CTkLabel(parent, image=sols_sniper, text="")
                 sols_sniper_label.grid(row=2, column=0, padx=(10, 0), pady=(5, 0), sticky="w")
-                # сохраняем ссылку чтобы не удалилось сборщиком мусора
+
                 sols_sniper_label.image = sols_sniper
         except:
             pass
@@ -481,24 +574,25 @@ class BiomeMacroApp:
                                                     font=customtkinter.CTkFont(family="Segoe UI", size=20, weight="bold"),
                                                     width=75,
                                                     command=self.start_macro)
-        self.start_button.grid(row=1, column=0, padx=(10, 0), pady=(10, 0), sticky="w")
+        self.start_button.grid(row=1, column=0, padx=(10, 0), pady=(10, 10), sticky="w")
 
         self.pause_button = customtkinter.CTkButton(self.root, text="Pause",
                                                     font=customtkinter.CTkFont(family="Segoe UI", size=20, weight="bold"),
                                                     width=75,
                                                     command=self.pause_macro)
-        self.pause_button.grid(row=1, column=1, padx=(5, 0), pady=(10, 0), sticky="w")
+        self.pause_button.grid(row=1, column=1, padx=(5, 0), pady=(10, 10), sticky="w")
 
         self.stop_button = customtkinter.CTkButton(self.root, text="Stop",
                                                    font=customtkinter.CTkFont(family="Segoe UI", size=20, weight="bold"),
                                                    width=75,
                                                    command=self.stop_macro)
-        self.stop_button.grid(row=1, column=2, padx=(5, 0), pady=(10, 0), sticky="w")
+        self.stop_button.grid(row=1, column=2, padx=(5, 10), pady=(10, 10), sticky="w")
 
     def open_configure_pings(self):
         window = customtkinter.CTkToplevel(self.root)
         window.title("Configure Pings")
-        window.geometry("600x400")
+        window.geometry("530x270")
+        window.resizable(False, False)
 
         label = customtkinter.CTkLabel(window, text="Choose what you get notified for!",
                                       font=customtkinter.CTkFont(family="Segoe UI", size=20))
@@ -544,6 +638,16 @@ class BiomeMacroApp:
             self.config.write(f)
         print(f"[Config] Saved Anti-AFK settings: enabled={self.anti_afk_enabled.get()}, interval={self.anti_afk_interval.get()}")
 
+    def _save_roblox_monitor_settings(self):
+        if not self.config.has_section('Macro'):
+            self.config.add_section('Macro')
+
+        self.config.set('Macro', 'roblox_monitor', str(self.roblox_monitor_enabled.get()))
+
+        with open(self.config_name, 'w') as f:
+            self.config.write(f)
+        print(f"[Config] Saved Roblox Monitor settings: enabled={self.roblox_monitor_enabled.get()}")
+
     def start_macro(self):
         if self.started and not self.paused:
             return
@@ -586,6 +690,9 @@ class BiomeMacroApp:
         if self.anti_afk_enabled.get():
             self._start_anti_afk()
 
+        if self.roblox_monitor_enabled.get():
+            self._start_roblox_monitor()
+
         self.root.title("perdstellar's Macro - Running")
         print("[Macro] Started")
 
@@ -606,6 +713,8 @@ class BiomeMacroApp:
         self.tracker.stop_detection()
 
         self._stop_anti_afk()
+
+        self._stop_roblox_monitor()
 
         self._send_status_webhook("Macro stopped.", 0xff4719)
 
@@ -739,6 +848,74 @@ class BiomeMacroApp:
             self.anti_afk_thread.join(timeout=2)
         print("[Anti-AFK] Stopped")
 
+    def _start_roblox_monitor(self):
+        if self.roblox_monitor_thread and self.roblox_monitor_thread.is_alive():
+            return
+
+        self.roblox_monitor_running = True
+        self.roblox_monitor_thread = threading.Thread(target=self._roblox_monitor_loop, daemon=True, name="RobloxMonitor")
+        self.roblox_monitor_thread.start()
+        print("[RobloxMonitor] Started")
+
+    def _stop_roblox_monitor(self):
+        self.roblox_monitor_running = False
+        if self.roblox_monitor_thread and self.roblox_monitor_thread.is_alive():
+            self.roblox_monitor_thread.join(timeout=2)
+        print("[RobloxMonitor] Stopped")
+
+    def _roblox_monitor_loop(self):
+        print("[RobloxMonitor] Loop started")
+        print(f"[RobloxMonitor] Initial state - running={self.roblox_monitor_running}, started={self.started}")
+
+        # initial delay to ensure Roblox is fully loaded
+        time.sleep(3)
+
+        # wait for Roblox window to appear initially
+        print("[RobloxMonitor] Waiting for Roblox window to appear...")
+        while self.roblox_monitor_running and self.started:
+            roblox_hwnd = self._find_roblox_window()
+            if roblox_hwnd:
+                self.roblox_window_handle = roblox_hwnd
+                print(f"[RobloxMonitor] Roblox window detected! Handle: {roblox_hwnd}")
+                break
+            print("[RobloxMonitor] Roblox window not found yet, waiting...")
+            time.sleep(3)
+
+        if not self.roblox_monitor_running or not self.started:
+            print("[RobloxMonitor] Loop stopped before Roblox window was found")
+            return
+
+        # now monitor for window disappearance or handle change with faster polling
+        print("[RobloxMonitor] Monitoring Roblox window...")
+        while self.roblox_monitor_running and self.started:
+            try:
+                if self.paused:
+                    time.sleep(1)
+                    continue
+
+                roblox_hwnd = self._find_roblox_window()
+
+                if not roblox_hwnd:
+                    print("[RobloxMonitor] Roblox window not found! Stopping macro...")
+                    self._send_status_webhook("Roblox has been closed/crashed! Stopping the detection.", 0xff0000)
+                    self.root.after(0, self.stop_macro)
+                    break
+                elif roblox_hwnd != self.roblox_window_handle:
+                    print(f"[RobloxMonitor] Roblox window handle changed from {self.roblox_window_handle} to {roblox_hwnd}! Stopping macro...")
+                    self._send_status_webhook("Roblox has been closed/crashed! Stopping the detection.", 0xff0000)
+                    self.root.after(0, self.stop_macro)
+                    break
+
+                time.sleep(1)
+
+            except Exception as e:
+                print(f"[RobloxMonitor] Error: {e}")
+                import traceback
+                traceback.print_exc()
+                time.sleep(1)
+
+        print("[RobloxMonitor] Loop stopped")
+
     def _anti_afk_loop(self):
         print(f"[Anti-AFK] Loop started - running={self.anti_afk_running}, started={self.started}")
 
@@ -843,7 +1020,7 @@ class BiomeMacroApp:
             def callback(hwnd, windows):
                 if win32gui.IsWindowVisible(hwnd):
                     title = win32gui.GetWindowText(hwnd)
-                    if title and "Roblox" in title:
+                    if title == "Roblox":
                         windows.append(hwnd)
                 return True
 
@@ -860,7 +1037,9 @@ class BiomeMacroApp:
                             if win32gui.IsWindowVisible(hwnd):
                                 _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
                                 if found_pid == pid_list[0]:
-                                    pid_list[1] = hwnd
+                                    title = win32gui.GetWindowText(hwnd)
+                                    if title == "Roblox":
+                                        pid_list[1] = hwnd
                             return True
 
                         pid_and_hwnd = [proc.info['pid'], None]
