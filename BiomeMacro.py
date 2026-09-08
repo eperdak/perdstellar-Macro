@@ -90,8 +90,8 @@ class BiomeTracker:
             "DREAMSPACE": {"color": "0xea9dda", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/DREAMSPACE.png"},
             "CYBERSPACE": {"color": "0x0A1A3D", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/CYBERSPACE.png"},
             "EGGLAND": {"color": "0xd4fc8d", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/EGGLAND.png"},
-            "BLAZING SUN": {"color": "0xFFDEAD", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/BLAZING%20SUN.png"},
-            "INCINERATOR ": {"color": "0xCD853F", "thumbnail_url": ""}
+            "BLAZING SUN": {"color": "0xFFDEAD", "thumbnail_url": ""},
+            "INCINERATOR": {"color": "0xCD853F", "thumbnail_url": ""}
         }
 
         try:
@@ -124,6 +124,21 @@ class BiomeTracker:
             pass
         return None
 
+    def _has_biome_data(self, log_file_path):
+        """Check if log file contains BloxstrapRPC biome data"""
+        try:
+            if not os.path.exists(log_file_path):
+                return False
+
+            with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                for line in file:
+                    if '[BloxstrapRPC]' in line and '"largeImage"' in line:
+                        return True
+            return False
+        except Exception:
+            return False
+
+
     def _get_latest_log_file(self):
         if not os.path.exists(self.logs_dir):
             return None
@@ -141,6 +156,14 @@ class BiomeTracker:
                 timestamp = self._parse_log_timestamp(filename)
                 if timestamp:
                     full_path = os.path.join(self.logs_dir, filename)
+                    # skip small files(likely launcher logs, not the game logs)
+                    # game logs are typically larger than 1046 bytes
+                    try: 
+                        file_size = os.path.getsize(full_path)
+                        if file_size <= 1046: # 1046 bytes or less = launcher log
+                            continue 
+                    except:
+                        pass
                     log_files_with_timestamps.append((timestamp, full_path, filename))
 
             if not log_files_with_timestamps:
@@ -158,7 +181,7 @@ class BiomeTracker:
                 print(f"[BiomeTracker] Tracking new log: {latest_filename}")
                 return latest_file
 
-            # if latest log is newer than current, switch to it
+            # if latest log is newer than current, switch to it immediately
             if latest_timestamp > self.current_log_timestamp:
                 print(f"[BiomeTracker] Switching to newer log: {latest_filename}")
                 self.current_log_timestamp = latest_timestamp
@@ -743,10 +766,16 @@ class BiomeMacroApp:
         # send "ended" webhook for previous biome
         if old_biome and old_biome != "NORMAL":
             biome_key = old_biome.lower().replace(" ", "_")
+
+            # get notification type for the old biome
             if biome_key in self.biome_vars:
                 notif_type = self.biome_vars[biome_key].get()
-                if notif_type != "Nothing":
-                    self._send_biome_webhook(old_biome, "end", notif_type)
+            else:
+                # for biomes not in config (new/rare biomes), default to Ping
+                notif_type = "Ping" if old_biome in self.RARE_BIOMES else "Message"
+
+            if notif_type != "Nothing":
+                self._send_biome_webhook(old_biome, "end", notif_type)
 
         # send "started" webhook for new biome
         if new_biome != "NORMAL":
