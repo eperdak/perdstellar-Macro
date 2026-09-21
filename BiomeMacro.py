@@ -157,10 +157,10 @@ class BiomeTracker:
                 if timestamp:
                     full_path = os.path.join(self.logs_dir, filename)
                     # skip small files(likely launcher logs, not the game logs)
-                    # game logs are typically larger than 1046 bytes
+                    # game logs are typically larger than 3000 bytes
                     try: 
                         file_size = os.path.getsize(full_path)
-                        if file_size <= 1046: # 1046 bytes or less = launcher log
+                        if file_size <= 3000: # 3000 bytes or less = launcher log
                             continue 
                     except:
                         pass
@@ -205,6 +205,7 @@ class BiomeTracker:
 
         # reset position if file changed
         if self.log_file_path != log_file_path:
+            print(f"[BiomeTracker] Log file changed, resetting position: {os.path.basename(log_file_path)}")
             self.log_file_path = log_file_path
             self.last_position = 0
 
@@ -212,7 +213,12 @@ class BiomeTracker:
             with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as file:
                 file.seek(self.last_position)
                 lines = file.readlines()
-                self.last_position = file.tell()
+                new_position = file.tell()
+
+                if lines:
+                    print(f"[BiomeTracker] Read {len(lines)} new lines from log (pos: {self.last_position} -> {new_position})")
+
+                self.last_position = new_position
                 return lines
         except Exception as e:
             print(f"[BiomeTracker] Error reading log: {e}")
@@ -221,50 +227,53 @@ class BiomeTracker:
     def _check_biome_in_logs(self, log_file_path):
         log_lines = self._read_log_file(log_file_path)
 
-        for line in reversed(log_lines):
+        if not log_lines:
+            return
+
+        biome_changes = []
+        for line in log_lines:
             if '[BloxstrapRPC]' in line and '"largeImage"' in line:
                 match = re.search(r'"largeImage"\s*:\s*\{[^}]*"hoverText"\s*:\s*"([^"]+)"', line)
                 if match:
                     biome = match.group(1).strip().upper()
+                    biome_changes.append(biome)
 
-                    # add unknown biomes to data
-                    if biome not in self.biome_data and biome != "NORMAL":
-                        print(f"[BiomeTracker] New biome detected: {biome}")
-                        self.biome_data[biome] = {
-                            "color": "0xffffff",
-                            "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/biome_placeholder.png"
-                        }
+        if not biome_changes:
+            return
 
-                    if biome != self.current_biome:
-                        with self.lock:
-                            old_biome = self.current_biome
-                            self.current_biome = biome
+        # only process the last biome change from this batch
+        latest_biome = biome_changes[-1]
 
-                        print(f"[BiomeTracker] Biome changed: {old_biome} -> {biome}")
+        # add unknown biomes to data
+        if latest_biome not in self.biome_data and latest_biome != "NORMAL":
+            print(f"[BiomeTracker] New biome detected: {latest_biome}")
+            self.biome_data[latest_biome] = {
+                "color": "0xffffff",
+                "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/biome_placeholder.png"
+            }
 
-                        # trigger callback
-                        if self.biome_callback:
-                            try:
-                                threading.Thread(
-                                    target=self.biome_callback,
-                                    args=(biome, old_biome),
-                                    daemon=True
-                                ).start()
-                            except Exception as e:
-                                print(f"[BiomeTracker] Callback error: {e}")
-                    return
+        if latest_biome != self.current_biome:
+            with self.lock:
+                old_biome = self.current_biome
+                self.current_biome = latest_biome
+
+            print(f"[BiomeTracker] Biome changed: {old_biome} -> {latest_biome}")
+
+            # trigger callback
+            if self.biome_callback:
+                try:
+                    threading.Thread(
+                        target=self.biome_callback,
+                        args=(latest_biome, old_biome),
+                        daemon=True
+                    ).start()
+                except Exception as e:
+                    print(f"[BiomeTracker] Callback error: {e}")
 
     def _detection_loop(self):
-        last_log_file = None
-
         while self.detection_running:
             try:
                 current_log_file = self._get_latest_log_file()
-
-                if current_log_file and current_log_file != last_log_file:
-                    self.last_position = 0
-                    last_log_file = current_log_file
-                    print(f"[BiomeTracker] Using log file: {current_log_file}")
 
                 if current_log_file:
                     self._check_biome_in_logs(current_log_file)
@@ -798,7 +807,7 @@ class BiomeMacroApp:
             "description": f"[{time.strftime('%H:%M:%S')}]: {message}",
             "color": color,
             "footer": {
-                "text": "perdstellar's Macro | v1.1-hotfix",
+                "text": "perdstellar's Macro | v1.1-hotfix1",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
@@ -833,7 +842,7 @@ class BiomeMacroApp:
             "description": description,
             "color": biome_color,
             "footer": {
-                "text": "perdstellar's Macro | v1.1-hotfix",
+                "text": "perdstellar's Macro | v1.1-hotfix1",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
