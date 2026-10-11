@@ -34,6 +34,45 @@ def exception_handler(exc_type, exc_value, exc_tb):
 
 sys.excepthook = exception_handler
 
+
+def _signal_launcher_ready():
+    event_name = os.environ.get('PERDSTALLAR_READY_EVENT')
+    if not event_name:
+        return
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        open_event = kernel32.OpenEventW
+        open_event.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p]
+        open_event.restype = ctypes.c_void_p
+
+        set_event = kernel32.SetEvent
+        set_event.argtypes = [ctypes.c_void_p]
+        set_event.restype = ctypes.c_int
+
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [ctypes.c_void_p]
+        close_handle.restype = ctypes.c_int
+
+        handle = open_event(0x0002, 0, event_name)
+        if handle:
+            try:
+                set_event(handle)
+            finally:
+                close_handle(handle)
+    except Exception:
+        pass
+
+
+def _asset_path(filename):
+    if getattr(sys, 'frozen', False):
+        base_path = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, 'assets', filename)
+
+
 class BiomeTracker:
 
     def __init__(self):
@@ -49,12 +88,7 @@ class BiomeTracker:
             self.root.geometry('505x285')
             self.root.resizable(False, False)
 
-            if getattr(sys, 'frozen', False):
-                base_path = sys._MEIPASS
-            else:
-                base_path = os.path.dirname(__file__)
-
-            icon_path = os.path.join(base_path, 'icon.ico')
+            icon_path = _asset_path('icon.ico')
             if os.path.exists(icon_path):
                 try:
                     self.root.iconbitmap(default=icon_path)
@@ -307,18 +341,10 @@ class BiomeMacroApp:
         customtkinter.set_default_color_theme("dark-blue")
         self.root = customtkinter.CTk()
         self.root.title("perdstellar's Macro")
-        self.root.geometry('498x290')
+        self.root.geometry('498x300')
         self.root.resizable(False, False)
 
-        # set icon for window
-        if getattr(sys, 'frozen', False):
-            # running as compiled exe
-            base_path = sys._MEIPASS
-        else:
-            # running as script
-            base_path = os.path.dirname(__file__)
-
-        icon_path = os.path.join(base_path, 'icon.ico')
+        icon_path = _asset_path('icon.ico')
         if os.path.exists(icon_path):
             try:
                 self.root.iconbitmap(icon_path)
@@ -351,6 +377,10 @@ class BiomeMacroApp:
         self.roblox_window_handle = None
 
         self._build_ui()
+
+        self.root.bind_all("<KeyPress-F1>", self._on_hotkey_start)
+        self.root.bind_all("<KeyPress-F2>", self._on_hotkey_stop)
+        self.root.bind_all("<KeyPress-F3>", self._on_hotkey_pause)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -437,11 +467,11 @@ class BiomeMacroApp:
 
     def _adjust_window_size(self, tab_name):
         if tab_name == "Webhook":
-            self.root.geometry('498x270')
+            self.root.geometry('498x300')
         elif tab_name == "Macro":
-            self.root.geometry('498x305')
+            self.root.geometry('498x335')
         elif tab_name == "Credits":
-            self.root.geometry('498x305')
+            self.root.geometry('498x335')
 
     def _build_webhook_tab(self, parent):
         # Configure parent to center content vertically
@@ -528,10 +558,8 @@ class BiomeMacroApp:
         info_label.grid(row=4, column=0, padx=(10, 0), pady=(10, 0), sticky="w")
 
     def _build_credits_tab(self, parent):
-        dirname = os.path.dirname(__file__)
-
         try:
-            perd_pfp_path = os.path.join(dirname, "perd.png")
+            perd_pfp_path = _asset_path("perd.png")
             if os.path.exists(perd_pfp_path):
                 perd_pfp = customtkinter.CTkImage(dark_image=Image.open(perd_pfp_path), size=(60, 60))
                 perd_pfp_label = customtkinter.CTkLabel(parent, image=perd_pfp, text="")
@@ -554,7 +582,7 @@ class BiomeMacroApp:
         github_link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/eperdak"))
 
         try:
-            max_pfp_path = os.path.join(dirname, "maxstellar.png")
+            max_pfp_path = _asset_path("maxstellar.png")
             if os.path.exists(max_pfp_path):
                 max_pfp = customtkinter.CTkImage(dark_image=Image.open(max_pfp_path), size=(60, 60))
                 max_pfp_label = customtkinter.CTkLabel(parent, image=max_pfp, text="")
@@ -578,7 +606,7 @@ class BiomeMacroApp:
 
         # Row 2: sols_sniper (dannw & yeswe)
         try:
-            sols_sniper_path = os.path.join(dirname, "sols_sniper.png")
+            sols_sniper_path = _asset_path("sols_sniper.png")
             if os.path.exists(sols_sniper_path):
                 sols_sniper = customtkinter.CTkImage(dark_image=Image.open(sols_sniper_path), size=(60, 60))
                 sols_sniper_label = customtkinter.CTkLabel(parent, image=sols_sniper, text="")
@@ -619,6 +647,13 @@ class BiomeMacroApp:
                                                    width=75,
                                                    command=self.stop_macro)
         self.stop_button.grid(row=1, column=2, padx=(5, 10), pady=(10, 10), sticky="w")
+
+        self.shortcut_label = customtkinter.CTkLabel(
+            self.root,
+            text="Shortcuts: F1 Start/Resume  |  F2 Stop  |  F3 Pause",
+            font=customtkinter.CTkFont(family="Segoe UI", size=13)
+        )
+        self.shortcut_label.grid(row=2, column=0, columnspan=3, padx=10, pady=(0, 8), sticky="w")
 
     def open_configure_pings(self):
         window = customtkinter.CTkToplevel(self.root)
@@ -679,6 +714,21 @@ class BiomeMacroApp:
         with open(self.config_name, 'w') as f:
             self.config.write(f)
         print(f"[Config] Saved Roblox Monitor settings: enabled={self.roblox_monitor_enabled.get()}")
+
+    def _on_hotkey_start(self, event=None):
+        if not self.started or self.paused:
+            self.start_macro()
+        return "break"
+
+    def _on_hotkey_stop(self, event=None):
+        if self.started:
+            self.stop_macro()
+        return "break"
+
+    def _on_hotkey_pause(self, event=None):
+        if self.started and not self.paused:
+            self.pause_macro()
+        return "break"
 
     def start_macro(self):
         if self.started and not self.paused:
@@ -1100,6 +1150,7 @@ class BiomeMacroApp:
 if __name__ == "__main__":
     try:
         app = BiomeMacroApp()
+        app.root.after_idle(_signal_launcher_ready)
         app.run()
     except KeyboardInterrupt:
         print("\n[App] Interrupted by user")
