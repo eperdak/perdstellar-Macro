@@ -9,6 +9,8 @@ import logging
 import sys
 import ctypes
 import threading
+import queue
+from ctypes import wintypes
 import re
 import requests
 import pyautogui
@@ -191,10 +193,10 @@ class BiomeTracker:
                 if timestamp:
                     full_path = os.path.join(self.logs_dir, filename)
                     # skip small files(likely launcher logs, not the game logs)
-                    # game logs are typically larger than 3000 bytes
+                    # game logs are typically larger than 9999 bytes
                     try: 
                         file_size = os.path.getsize(full_path)
-                        if file_size <= 3000: # 3000 bytes or less = launcher log
+                        if file_size <= 9999: # 9999 bytes or less = launcher log
                             continue 
                     except:
                         pass
@@ -333,6 +335,129 @@ class BiomeTracker:
         print("[BiomeTracker] Detection stopped")
 
 
+class _GlobalHotkeyListener:
+    WM_HOTKEY = 0x0312
+    WM_QUIT = 0x0012
+    MOD_NOREPEAT = 0x4000
+    HOTKEYS = {
+        1: (0x70, "start"),
+        2: (0x71, "stop"),
+        3: (0x72, "pause"),
+    }
+
+    def __init__(self, commands):
+        self.commands = commands
+        self.available = False
+        self.error = None
+        self._thread = None
+        self._thread_id = 0
+        self._ready = threading.Event()
+        self._stopped = threading.Event()
+        self._stop_requested = threading.Event()
+        self._lock = threading.Lock()
+
+        self._user32 = ctypes.WinDLL("user32", use_last_error=True)
+        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        self._register_hotkey = self._user32.RegisterHotKey
+        self._register_hotkey.argtypes = [wintypes.HWND, wintypes.INT, wintypes.UINT, wintypes.UINT]
+        self._register_hotkey.restype = wintypes.BOOL
+
+        self._unregister_hotkey = self._user32.UnregisterHotKey
+        self._unregister_hotkey.argtypes = [wintypes.HWND, wintypes.INT]
+        self._unregister_hotkey.restype = wintypes.BOOL
+
+        self._get_message = self._user32.GetMessageW
+        self._get_message.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
+        self._get_message.restype = wintypes.BOOL
+
+        self._post_thread_message = self._user32.PostThreadMessageW
+        self._post_thread_message.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        self._post_thread_message.restype = wintypes.BOOL
+
+        self._get_current_thread_id = self._kernel32.GetCurrentThreadId
+        self._get_current_thread_id.argtypes = []
+        self._get_current_thread_id.restype = wintypes.DWORD
+
+    def start(self):
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                return self.available
+
+            self.available = False
+            self.error = None
+            self._thread_id = 0
+            self._ready.clear()
+            self._stopped.clear()
+            self._stop_requested.clear()
+            self._thread = threading.Thread(target=self._listen, daemon=True, name="GlobalHotkeys")
+            self._thread.start()
+
+        if not self._ready.wait(timeout=3):
+            self.error = "Timed out while registering global hotkeys."
+            self.stop()
+            return False
+
+        return self.available
+
+    def stop(self):
+        self._stop_requested.set()
+
+        with self._lock:
+            thread = self._thread
+            thread_id = self._thread_id
+
+        if thread_id:
+            self._post_thread_message(thread_id, self.WM_QUIT, 0, 0)
+
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=3)
+
+    def _listen(self):
+        registered_ids = []
+
+        try:
+            with self._lock:
+                self._thread_id = self._get_current_thread_id()
+
+            for hotkey_id, (virtual_key, _) in self.HOTKEYS.items():
+                if self._stop_requested.is_set():
+                    return
+
+                if not self._register_hotkey(None, hotkey_id, self.MOD_NOREPEAT, virtual_key):
+                    error_code = ctypes.get_last_error()
+                    self.error = f"F{hotkey_id} is already used by another application (Windows error {error_code})."
+                    return
+
+                registered_ids.append(hotkey_id)
+
+            self.available = True
+            self._ready.set()
+
+            message = wintypes.MSG()
+            while True:
+                result = self._get_message(ctypes.byref(message), None, 0, 0)
+                if result <= 0:
+                    break
+
+                if message.message == self.WM_HOTKEY:
+                    command = self.HOTKEYS.get(int(message.wParam))
+                    if command:
+                        self.commands.put(command[1])
+        except Exception as error:
+            self.error = f"Could not register global hotkeys: {error}"
+        finally:
+            for hotkey_id in registered_ids:
+                self._unregister_hotkey(None, hotkey_id)
+
+            with self._lock:
+                self.available = False
+                self._thread_id = 0
+
+            self._ready.set()
+            self._stopped.set()
+
+
 class BiomeMacroApp:
 
     RARE_BIOMES = ["GLITCHED", "DREAMSPACE", "CYBERSPACE"]
@@ -354,6 +479,9 @@ class BiomeMacroApp:
         self.started = False
         self.paused = False
         self.destroyed = False
+        self._hotkey_commands = queue.Queue()
+        self._global_hotkeys = _GlobalHotkeyListener(self._hotkey_commands)
+        self._hotkey_dispatch_after_id = None
 
         self.config_name = 'config.ini'
         self.config = self._load_config()
@@ -378,11 +506,8 @@ class BiomeMacroApp:
 
         self._build_ui()
 
-        self.root.bind_all("<KeyPress-F1>", self._on_hotkey_start)
-        self.root.bind_all("<KeyPress-F2>", self._on_hotkey_stop)
-        self.root.bind_all("<KeyPress-F3>", self._on_hotkey_pause)
-
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._schedule_hotkey_dispatch()
 
     def _load_config(self):
         config = configparser.ConfigParser()
@@ -715,6 +840,48 @@ class BiomeMacroApp:
             self.config.write(f)
         print(f"[Config] Saved Roblox Monitor settings: enabled={self.roblox_monitor_enabled.get()}")
 
+    def _schedule_hotkey_dispatch(self):
+        if not self.destroyed and self._hotkey_dispatch_after_id is None:
+            self._hotkey_dispatch_after_id = self.root.after(50, self._dispatch_global_hotkeys)
+
+    def _dispatch_global_hotkeys(self):
+        self._hotkey_dispatch_after_id = None
+        if self.destroyed:
+            return
+
+        while True:
+            try:
+                command = self._hotkey_commands.get_nowait()
+            except queue.Empty:
+                break
+
+            if command == "start":
+                self._on_hotkey_start()
+            elif command == "stop":
+                self._on_hotkey_stop()
+            elif command == "pause":
+                self._on_hotkey_pause()
+
+        self._schedule_hotkey_dispatch()
+
+    def _start_global_hotkeys(self):
+        if self._global_hotkeys.start():
+            print("[Hotkeys] Global F1/F2/F3 hotkeys registered")
+            return
+
+        error = self._global_hotkeys.error or "Unknown registration error"
+        print(f"[Hotkeys] Global hotkeys unavailable: {error}")
+        self.shortcut_label.configure(text="Global hotkeys unavailable - use the buttons")
+
+    def _stop_global_hotkeys(self):
+        if self._hotkey_dispatch_after_id is not None:
+            try:
+                self.root.after_cancel(self._hotkey_dispatch_after_id)
+            except Exception:
+                pass
+            self._hotkey_dispatch_after_id = None
+        self._global_hotkeys.stop()
+
     def _on_hotkey_start(self, event=None):
         if not self.started or self.paused:
             self.start_macro()
@@ -810,7 +977,11 @@ class BiomeMacroApp:
         print("[Macro] Stopped")
 
     def on_close(self):
+        if self.destroyed:
+            return
+
         self.destroyed = True
+        self._stop_global_hotkeys()
         if self.started:
             self.stop_macro()
         self.root.quit()
@@ -857,7 +1028,7 @@ class BiomeMacroApp:
             "description": f"[{time.strftime('%H:%M:%S')}]: {message}",
             "color": color,
             "footer": {
-                "text": "perdstellar's Macro | v1.1-hotfix1",
+                "text": "perdstellar's Macro | v1.2",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
@@ -892,7 +1063,7 @@ class BiomeMacroApp:
             "description": description,
             "color": biome_color,
             "footer": {
-                "text": "perdstellar's Macro | v1.1-hotfix1",
+                "text": "perdstellar's Macro | v1.2",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
@@ -1144,15 +1315,22 @@ class BiomeMacroApp:
 
     def run(self):
         print("[App] Starting perdstellar's Macro...")
-        self.root.mainloop()
+        self._start_global_hotkeys()
+        try:
+            self.root.mainloop()
+        finally:
+            self._stop_global_hotkeys()
 
 
 if __name__ == "__main__":
+    app = None
     try:
         app = BiomeMacroApp()
         app.root.after_idle(_signal_launcher_ready)
         app.run()
     except KeyboardInterrupt:
+        if app is not None:
+            app.on_close()
         print("\n[App] Interrupted by user")
         sys.exit(0)
     except Exception as e:
