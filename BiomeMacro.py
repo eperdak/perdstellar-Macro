@@ -110,35 +110,24 @@ class BiomeTracker:
             self.biome_data = self._load_biome_data()
 
     def _load_biome_data(self):
-        url = "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/assets/biomes_data.json"
 
         default_data = {
-            "NORMAL": {"color": "0xffffff", "thumbnail_url": ""},
-            "WINDY": {"color": "0x9ae5ff", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/WINDY.png"},
-            "RAINY": {"color": "0x027cbd", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/RAINY.png"},
-            "SNOWY": {"color": "0xDceff9", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/SNOWY.png"},
-            "SAND STORM": {"color": "0x8F7057", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/SAND%20STORM.png"},
-            "HELL": {"color": "0xff4719", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/HELL.png"},
-            "STARFALL": {"color": "0x011ab7", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/STARFALL.png"},
-            "CORRUPTION": {"color": "0x6d32a8", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/CORRUPTION.png"},
-            "NULL": {"color": "0x838383", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/NULL.png"},
-            "GLITCHED": {"color": "0xbfff00", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/GLITCHED.png"},
-            "DREAMSPACE": {"color": "0xea9dda", "thumbnail_url": "https://maxstellar.github.io/biome_thumb/DREAMSPACE.png"},
-            "CYBERSPACE": {"color": "0x0A1A3D", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/CYBERSPACE.png"},
-            "EGGLAND": {"color": "0xd4fc8d", "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/EGGLAND.png"},
-            "BLAZING SUN": {"color": "0xFFDEAD", "thumbnail_url": ""},
-            "INCINERATOR": {"color": "0xCD853F", "thumbnail_url": ""}
+            "NORMAL": {"color": "0xffffff", "thumbnail_url": r""},
+            "WINDY": {"color": "0x9ae5ff", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/WINDY.png"},
+            "RAINY": {"color": "0x027cbd", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/RAINY.png"},
+            "SNOWY": {"color": "0xDceff9", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/SNOWY.png"},
+            "SAND STORM": {"color": "0x8F7057", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/SAND%20STORM.png"},
+            "HELL": {"color": "0xff4719", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/HELL.png"},
+            "STARFALL": {"color": "0x011ab7", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/STARFALL.png"},
+            "CORRUPTION": {"color": "0x6d32a8", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/CORRUPTION.png"},
+            "NULL": {"color": "0x838383", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/NULL.png"},
+            "GLITCHED": {"color": "0xbfff00", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/GLITCHED.png"},
+            "DREAMSPACE": {"color": "0xea9dda", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/DREAMSPACE.png"},
+            "CYBERSPACE": {"color": "0x0A1A3D", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/CYBERSPACE.png"},
+            "SINGULARITY": {"color": "0x0A1A3D", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/SINGULARITY.png"},
+            "LOST FOREST": {"color": "0x1a6942", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/LOST%20FOREST.png"},
+            "RADIANT FOREST": {"color": "0x9b59b6", "thumbnail_url": r""}
         }
-
-        try:
-            r = requests.get(url, timeout=3)
-            r.raise_for_status()
-            data = r.json()
-            if isinstance(data, dict) and data:
-                print("[BiomeTracker] Loaded biome data from GitHub")
-                return data
-        except Exception as e:
-            print(f"[BiomeTracker] Failed to load from GitHub, using defaults: {e}")
 
         return default_data
 
@@ -146,11 +135,6 @@ class BiomeTracker:
         self.biome_callback = callback
 
     def _parse_log_timestamp(self, filename):
-        """
-        Parse log filename to extract timestamp
-        Format: 0.736.0.7361348_20260907T203326Z_Player_77795_last.log
-        Returns: timestamp string (20260907T203326Z) or None
-        """
         try:
             parts = filename.split('_')
             if len(parts) >= 2:
@@ -180,54 +164,47 @@ class BiomeTracker:
             return None
 
         try:
-            files = [f for f in os.listdir(self.logs_dir)
-                     if f.endswith('.log') and 'Installer' not in f]
+            files = [
+                filename for filename in os.listdir(self.logs_dir)
+                if filename.lower().endswith('.log')
+                and 'installer' not in filename.lower()
+                and 'crashhandler' not in filename.lower()
+            ]
 
             if not files:
                 return None
 
-            # parse and sort by timestamp in filename
             log_files_with_timestamps = []
             for filename in files:
                 timestamp = self._parse_log_timestamp(filename)
                 if timestamp:
                     full_path = os.path.join(self.logs_dir, filename)
-                    # skip small files(likely launcher logs, not the game logs)
-                    # game logs are typically larger than 9999 bytes
-                    try: 
-                        file_size = os.path.getsize(full_path)
-                        if file_size <= 9999: # 9999 bytes or less = launcher log
-                            continue 
-                    except:
-                        pass
                     log_files_with_timestamps.append((timestamp, full_path, filename))
 
             if not log_files_with_timestamps:
-                # fallback to modification time if no timestamps found
-                files_full = [os.path.join(self.logs_dir, f) for f in files]
+                # newest modification time among the already-filtered game logs
+                files_full = [os.path.join(self.logs_dir, filename) for filename in files]
                 return max(files_full, key=os.path.getmtime)
 
-            # sort by timestamp (newest first)
             log_files_with_timestamps.sort(key=lambda x: x[0], reverse=True)
             latest_timestamp, latest_file, latest_filename = log_files_with_timestamps[0]
 
-            # if we haven't tracked a log yet, use the latest one
             if self.current_log_timestamp is None:
                 self.current_log_timestamp = latest_timestamp
                 print(f"[BiomeTracker] Tracking new log: {latest_filename}")
                 return latest_file
 
-            # if latest log is newer than current, switch to it immediately
+            # If the latest log is newer than the current one, switch to it immediately.
             if latest_timestamp > self.current_log_timestamp:
                 print(f"[BiomeTracker] Switching to newer log: {latest_filename}")
                 self.current_log_timestamp = latest_timestamp
                 return latest_file
 
-            # otherwise, keep using current log
+            # Otherwise, keep using the current log if it still exists.
             if self.log_file_path and os.path.exists(self.log_file_path):
                 return self.log_file_path
 
-            # if current log doesn't exist anymore, use latest
+            # If the current log no longer exists, use the latest available game log.
             self.current_log_timestamp = latest_timestamp
             return latest_file
 
@@ -1028,7 +1005,7 @@ class BiomeMacroApp:
             "description": f"[{time.strftime('%H:%M:%S')}]: {message}",
             "color": color,
             "footer": {
-                "text": "perdstellar's Macro | v1.2",
+                "text": "perdstellar's Macro | v1.3",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
@@ -1063,7 +1040,7 @@ class BiomeMacroApp:
             "description": description,
             "color": biome_color,
             "footer": {
-                "text": "perdstellar's Macro | v1.2",
+                "text": "perdstellar's Macro | v1.3",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
