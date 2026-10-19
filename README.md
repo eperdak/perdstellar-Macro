@@ -20,5 +20,7 @@ This project is a fork of [maxstellar Biome Macro](https://github.com/purestelle
 ## Common Issues
 ### 'Dependencies not found' error.
 - Reinstall the latest release, make sure to extract the ZIP archive correctly(with `macro_python_dependencies` folder inside).
+### No biomes are sending.
+- Check your webhook, make sure you copied your webhook right. Still no biomes? - Relaunch the macro, relaunch the Roblox itself.
 
 Enjoy!
