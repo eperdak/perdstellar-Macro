@@ -16,14 +16,23 @@ import requests
 import pyautogui
 import win32gui
 import win32process
-from datetime import datetime, timezone
+from datetime import datetime, timezone # added timezone just cuz the first prototype of log parser used timestamps lul
 from PIL import Image
 
 
 # logging and exception handling
+# its not ai I swear, also, my name is ai, so technically, this project made completely by ai(me)
+
+
+_log_base_dir = (
+    os.path.dirname(sys.executable)
+    if getattr(sys, 'frozen', False)
+    else os.path.dirname(os.path.abspath(__file__))
+)
+LOG_FILE_PATH = os.path.join(_log_base_dir, 'crash.log')
 
 logging.basicConfig(
-    filename='crash.log',
+    filename=LOG_FILE_PATH,
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -106,7 +115,8 @@ class BiomeTracker:
             self.log_file_path = None
             self.current_log_timestamp = None
             self.lock = threading.Lock()
-
+            self._startup_log_cleanup_done = False
+            # ^^^ ez log cleaner ezzz ezzzzzzz cry blazing
             self.biome_data = self._load_biome_data()
 
     def _load_biome_data(self):
@@ -159,6 +169,110 @@ class BiomeTracker:
             return False
 
 
+    def _tracker_log(self, message, level="info"):
+        print(message)
+        log_method = getattr(logger, level, logger.info)
+        log_method(message)
+
+    def _is_roblox_running(self):
+        try:
+            for process in psutil.process_iter(["name"]):
+                try:
+                    if (process.info.get("name") or "").lower() == "robloxplayerbeta.exe":
+                        return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+        except Exception as e:
+            self._tracker_log(
+                f"[LogCleanup] Could not inspect Roblox processes: {type(e).__name__}: {e}",
+                "warning",
+            )
+        return False
+
+    def _cleanup_roblox_logs(self):
+        self._tracker_log(f"[LogCleanup] Starting cleanup in: {self.logs_dir}")
+
+        if not self.logs_dir or not os.path.isdir(self.logs_dir):
+            self._tracker_log(
+                f"[LogCleanup] Log directory does not exist; cleanup skipped: {self.logs_dir}",
+                "warning",
+            )
+            return
+
+        try:
+            log_paths = [
+                os.path.join(self.logs_dir, name)
+                for name in os.listdir(self.logs_dir)
+                if name.lower().endswith(".log")
+                and os.path.isfile(os.path.join(self.logs_dir, name))
+            ]
+        except OSError as e:
+            self._tracker_log(
+                f"[LogCleanup] Cannot list log directory: {type(e).__name__}: {e}",
+                "error",
+            )
+            return
+
+        if not log_paths:
+            self._tracker_log("[LogCleanup] No .log files found; nothing to clean")
+            return
+
+        roblox_running = self._is_roblox_running()
+        self._tracker_log(
+            f"[LogCleanup] Found {len(log_paths)} .log file(s); Roblox process running: {roblox_running}"
+        )
+
+        preserve_path = None
+        if roblox_running:
+            game_logs = [
+                path for path in log_paths
+                if "installer" not in os.path.basename(path).lower()
+                and "crashhandler" not in os.path.basename(path).lower()
+            ]
+            if not game_logs:
+                self._tracker_log(
+                    "[LogCleanup] Roblox is running, but no eligible game log was found. "
+                    "Skipping deletion to avoid disrupting log discovery.",
+                    "warning",
+                )
+                return
+            try:
+                preserve_path = max(game_logs, key=os.path.getmtime)
+            except OSError as e:
+                self._tracker_log(
+                    f"[LogCleanup] Could not determine newest game log: {type(e).__name__}: {e}. "
+                    "Skipping cleanup for safety.",
+                    "warning",
+                )
+                return
+            self._tracker_log(
+                f"[LogCleanup] Roblox is running; preserving newest candidate: "
+                f"{os.path.basename(preserve_path)} (mtime={datetime.fromtimestamp(os.path.getmtime(preserve_path)).isoformat()})"
+            )
+
+        deleted = 0
+        failed = 0
+        preserved = 0
+        for path in log_paths:
+            if preserve_path and os.path.normcase(path) == os.path.normcase(preserve_path):
+                preserved += 1
+                continue
+            try:
+                os.remove(path)
+                deleted += 1
+                self._tracker_log(f"[LogCleanup] Deleted: {os.path.basename(path)}")
+            except OSError as e:
+                failed += 1
+                self._tracker_log(
+                    f"[LogCleanup] Could not delete {os.path.basename(path)}: "
+                    f"{type(e).__name__} (errno={e.errno}): {e}",
+                    "warning",
+                )
+
+        self._tracker_log(
+            f"[LogCleanup] Cleanup finished: deleted={deleted}, preserved_active_candidate={preserved}, failed={failed}"
+        )
+
     def _get_latest_log_file(self):
         if not os.path.exists(self.logs_dir):
             return None
@@ -191,20 +305,21 @@ class BiomeTracker:
 
             if self.current_log_timestamp is None:
                 self.current_log_timestamp = latest_timestamp
-                print(f"[BiomeTracker] Tracking new log: {latest_filename}")
+                self._tracker_log(f"[BiomeTracker] Tracking new log: {latest_filename}")
                 return latest_file
 
-            # If the latest log is newer than the current one, switch to it immediately.
+            # the latest log is newer than the current one, switch to it immediately
             if latest_timestamp > self.current_log_timestamp:
-                print(f"[BiomeTracker] Switching to newer log: {latest_filename}")
+                self._tracker_log(f"[BiomeTracker] Switching to newer log: {latest_filename}")
                 self.current_log_timestamp = latest_timestamp
                 return latest_file
 
-            # Otherwise, keep using the current log if it still exists.
+            # keep using the current log if it still exists
             if self.log_file_path and os.path.exists(self.log_file_path):
                 return self.log_file_path
 
-            # If the current log no longer exists, use the latest available game log.
+            # the current log no longer exists, use the latest available game log
+            # idk if i need any of this, since log cleaner yk, but just to be safe
             self.current_log_timestamp = latest_timestamp
             return latest_file
 
@@ -218,7 +333,7 @@ class BiomeTracker:
 
         # reset position if file changed
         if self.log_file_path != log_file_path:
-            print(f"[BiomeTracker] Log file changed, resetting position: {os.path.basename(log_file_path)}")
+            self._tracker_log(f"[BiomeTracker] Log file changed, resetting position: {os.path.basename(log_file_path)}")
             self.log_file_path = log_file_path
             self.last_position = 0
 
@@ -229,12 +344,12 @@ class BiomeTracker:
                 new_position = file.tell()
 
                 if lines:
-                    print(f"[BiomeTracker] Read {len(lines)} new lines from log (pos: {self.last_position} -> {new_position})")
+                    self._tracker_log(f"[BiomeTracker] Read {len(lines)} new lines from log (pos: {self.last_position} -> {new_position})")
 
                 self.last_position = new_position
                 return lines
         except Exception as e:
-            print(f"[BiomeTracker] Error reading log: {e}")
+            self._tracker_log(f"[BiomeTracker] Error reading log: {type(e).__name__}: {e}", "error")
             return []
 
     def _check_biome_in_logs(self, log_file_path):
@@ -257,12 +372,12 @@ class BiomeTracker:
         # only process the last biome change from this batch
         latest_biome = biome_changes[-1]
 
-        # add unknown biomes to data
+        # add unknown biomes to data (blazing sun mentonied)
         if latest_biome not in self.biome_data and latest_biome != "NORMAL":
             print(f"[BiomeTracker] New biome detected: {latest_biome}")
             self.biome_data[latest_biome] = {
                 "color": "0xffffff",
-                "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/biome_placeholder.png"
+                "thumbnail_url": "https://raw.githubusercontent.com/xVapure/Noteab-Macro/refs/heads/main/images/biome_placeholder.png" # <- critisize woulda kill me for that(please dont)
             }
 
         if latest_biome != self.current_biome:
@@ -284,6 +399,17 @@ class BiomeTracker:
                     print(f"[BiomeTracker] Callback error: {e}")
 
     def _detection_loop(self):
+        if not self._startup_log_cleanup_done:
+            self._tracker_log("[LogCleanup] Running startup cleanup (once per app launch)")
+            self._cleanup_roblox_logs()
+            self._startup_log_cleanup_done = True
+        else:
+            self._tracker_log(
+                f"[BiomeTracker] Resuming detection from saved position: "
+                f"file={os.path.basename(self.log_file_path) if self.log_file_path else '<not selected>'}, "
+                f"position={self.last_position}, biome={self.current_biome}"
+            )
+
         while self.detection_running:
             try:
                 current_log_file = self._get_latest_log_file()
@@ -293,7 +419,7 @@ class BiomeTracker:
 
                 time.sleep(1)
             except Exception as e:
-                print(f"[BiomeTracker] Detection loop error: {e}")
+                self._tracker_log(f"[BiomeTracker] Detection loop error: {type(e).__name__}: {e}", "error")
                 time.sleep(2)
 
     def start_detection(self):
@@ -309,7 +435,11 @@ class BiomeTracker:
         self.detection_running = False
         if self.detection_thread and self.detection_thread.is_alive():
             self.detection_thread.join(timeout=3)
-        print("[BiomeTracker] Detection stopped")
+        self._tracker_log(
+            f"[BiomeTracker] Detection stopped; saved position: "
+            f"file={os.path.basename(self.log_file_path) if self.log_file_path else '<not selected>'}, "
+            f"position={self.last_position}, biome={self.current_biome}"
+        )
 
 
 class _GlobalHotkeyListener:
@@ -539,7 +669,7 @@ class BiomeMacroApp:
             self.biome_vars[biome_key] = customtkinter.StringVar(self.root, value)
 
     def _build_ui(self):
-        # Configure grid layout
+        # this is made by ai now, sorry im not good at frontend :(
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_rowconfigure(1, weight=0)
         self.root.grid_columnconfigure(0, weight=1)
@@ -758,6 +888,7 @@ class BiomeMacroApp:
         self.shortcut_label.grid(row=2, column=0, columnspan=3, padx=10, pady=(0, 8), sticky="w")
 
     def open_configure_pings(self):
+        # not changing that cuz who cares lol (no more ai btw)
         window = customtkinter.CTkToplevel(self.root)
         window.title("Configure Pings")
         window.geometry("530x270")
@@ -843,7 +974,7 @@ class BiomeMacroApp:
 
     def _start_global_hotkeys(self):
         if self._global_hotkeys.start():
-            print("[Hotkeys] Global F1/F2/F3 hotkeys registered")
+            print("[Hotkeys] Global F1/F2/F3 hotkeys regitsered")
             return
 
         error = self._global_hotkeys.error or "Unknown registration error"
@@ -1005,7 +1136,7 @@ class BiomeMacroApp:
             "description": f"[{time.strftime('%H:%M:%S')}]: {message}",
             "color": color,
             "footer": {
-                "text": "perdstellar's Macro | v1.3",
+                "text": "perdstellar's Macro | v1.3.1",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
@@ -1040,7 +1171,7 @@ class BiomeMacroApp:
             "description": description,
             "color": biome_color,
             "footer": {
-                "text": "perdstellar's Macro | v1.3",
+                "text": "perdstellar's Macro | v1.3.1",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
@@ -1122,6 +1253,7 @@ class BiomeMacroApp:
             return
 
         # now monitor for window disappearance or handle change with faster polling
+        # well i should just make disconnect detection from the logs
         print("[RobloxMonitor] Monitoring Roblox window...")
         while self.roblox_monitor_running and self.started:
             try:
@@ -1298,7 +1430,7 @@ class BiomeMacroApp:
         finally:
             self._stop_global_hotkeys()
 
-
+# whoever see this - lmao did you really enjoyed that mess? dm me on discord if yes - @perdak_destroyer (Uid:397828061287940097)
 if __name__ == "__main__":
     app = None
     try:
