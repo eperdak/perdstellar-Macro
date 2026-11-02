@@ -140,7 +140,9 @@ class BiomeTracker:
             "CYBERSPACE": {"color": "0x0A1A3D", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/CYBERSPACE.png"},
             "SINGULARITY": {"color": "0x0A1A3D", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/SINGULARITY.png"},
             "LOST FOREST": {"color": "0x1a6942", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/LOST%20FOREST.png"},
-            "RADIANT FOREST": {"color": "0x9b59b6", "thumbnail_url": r""}
+            "RADIANT FOREST": {"color": "0x9b59b6", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/RAIDANT%20FOREST.png"},
+            "PUMPKIN MOON": {"color": "0xd55e09", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/PUMPKIN%20MOON.png"},
+            "GRAVEYARD": {"color": "0x2c2c2f", "thumbnail_url": r"https://raw.githubusercontent.com/eperdak/perdstellar-Macro/refs/heads/main/assets/Biomes/GRAVEYARD.png"}
         }
 
         return default_data
@@ -1188,7 +1190,7 @@ class BiomeMacroApp:
             "description": f"[{time.strftime('%H:%M:%S')}]: {message}",
             "color": color,
             "footer": {
-                "text": "perdstellar's Macro | v1.3.1-hotfix",
+                "text": "perdstellar's Macro | v1.4",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
@@ -1223,7 +1225,7 @@ class BiomeMacroApp:
             "description": description,
             "color": biome_color,
             "footer": {
-                "text": "perdstellar's Macro | v1.3.1=hotfix",
+                "text": "perdstellar's Macro | v1.4",
                 "icon_url": "https://raw.githubusercontent.com/eperdak/perdstellar-Macro/ffb828546cfd9ea64b1619065b8b28f8d0a2c857/assets/embed_footer_icon.png"
             }
         }
